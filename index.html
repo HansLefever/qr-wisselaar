@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <title>De Mol</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="screen">
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <p>Scan registreren…</p>
+    </div>
+
+    <section id="result" class="result hidden" aria-live="polite">
+      <img id="resultImage" alt="Afbeelding van deze scan">
+      <div id="scanInfo" class="scan-info"></div>
+    </section>
+
+    <section id="error" class="error hidden">
+      <h1>Verbinding mislukt</h1>
+      <p>Controleer je internetverbinding en probeer opnieuw.</p>
+      <pre id="errorText"></pre>
+    </section>
+  </main>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
+    import {
+      getFirestore,
+      doc,
+      runTransaction
+    } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
+    // =========================================================
+    // 1. VERVANG DIT DOOR JOUW EIGEN FIREBASE CONFIGURATIE
+    // Firebase Console > Project settings > Your apps > Web app
+    // =========================================================
+    const firebaseConfig = {
+  	apiKey: "AIzaSyDK04oYlCJjFYVRGQ-StVMIgHQy12mZcpo",
+  	authDomain: "de-mol-qr.firebaseapp.com",
+  	projectId: "de-mol-qr",
+  	storageBucket: "de-mol-qr.firebasestorage.app",
+  	messagingSenderId: "923113589790",
+  	appId: "1:923113589790:web:acc572742407fbc67ab20f"
+	};
+
+    // De 3 afbeeldingen. Vervang de bestanden in /images indien gewenst.
+    const images = [
+      "images/afbeelding1.png",
+      "images/afbeelding2.png",
+      "images/afbeelding3.png"
+    ];
+
+    // true = klein scan-nummer onder de afbeelding tonen.
+    // Zet op false voor het uiteindelijke spel.
+    const SHOW_SCAN_NUMBER = false;
+
+    const loading = document.getElementById("loading");
+    const result = document.getElementById("result");
+    const errorBox = document.getElementById("error");
+    const errorText = document.getElementById("errorText");
+    const resultImage = document.getElementById("resultImage");
+    const scanInfo = document.getElementById("scanInfo");
+
+    function showError(err) {
+      loading.classList.add("hidden");
+      result.classList.add("hidden");
+      errorBox.classList.remove("hidden");
+      errorText.textContent = err?.message || String(err);
+      console.error(err);
+    }
+
+    async function registerScan() {
+      const app = initializeApp(firebaseConfig);
+      const db = getFirestore(app);
+
+      // Firestore document: qrGame/main
+      const counterRef = doc(db, "qrGame", "main");
+
+      // runTransaction maakt gelijktijdige scans veilig:
+      // elke scanner krijgt een eigen opeenvolgend nummer.
+      const scanNumber = await runTransaction(db, async (transaction) => {
+        const snap = await transaction.get(counterRef);
+
+        if (!snap.exists()) {
+          throw new Error(
+            "Teller ontbreekt. Maak in Firestore collection 'qrGame', document 'main', field 'count' = 0."
+          );
+        }
+
+        const current = snap.data().count;
+
+        if (!Number.isInteger(current) || current < 0) {
+          throw new Error("Ongeldige tellerwaarde in Firestore.");
+        }
+
+        const next = current + 1;
+        transaction.update(counterRef, { count: next });
+        return next;
+      });
+
+      // scan 1 -> index 0
+      // scan 2 -> index 1
+      // scan 3 -> index 2
+      // scan 4 -> index 0
+      const imageIndex = (scanNumber - 1) % images.length;
+
+      resultImage.onload = () => {
+        loading.classList.add("hidden");
+        result.classList.remove("hidden");
+      };
+
+      resultImage.onerror = () => {
+        showError(new Error("Afbeelding kon niet worden geladen: " + images[imageIndex]));
+      };
+
+      resultImage.src = images[imageIndex];
+
+      if (SHOW_SCAN_NUMBER) {
+        scanInfo.textContent = `Scan ${scanNumber} · afbeelding ${imageIndex + 1}`;
+      } else {
+        scanInfo.textContent = "";
+      }
+    }
+
+    registerScan().catch(showError);
+  </script>
+</body>
+</html>
